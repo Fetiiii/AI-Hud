@@ -6,8 +6,11 @@ sistem tepsisinden açılan hafif bir HUD. Backend Rust (Tauri), arayüz Svelte.
 ## Ne gösteriyor
 
 - Claude Code: 5 saatlik ve haftalık kullanım yüzdesi + sıfırlanma zamanı
-- Codex: aynı metrikler (uç nokta/şema henüz gerçek bir hesapla doğrulanmadı, bkz. `src-tauri/src/providers/codex.rs`)
-- Aktif oturumun context penceresi doluluk oranı (yerel transcript dosyalarından, ağ çağrısı yok)
+- Codex: aynı metrikler (5 saatlik + haftalık, `rate_limit.primary_window` / `secondary_window`)
+- Aktif oturumun context penceresi doluluk oranı - şu an sadece Claude Code için
+  (yerel transcript dosyalarından, ağ çağrısı yok); Codex'in yerel oturum
+  loglarının formatı henüz doğrulanmadığı için Codex context ölçümü boş döner,
+  bkz. `src-tauri/src/context.rs`
 
 Sistem tepsisindeki simgeye tıklamak küçük bir popover açar; popover içindeki
 herhangi bir metriğe çift tıklamak (veya popover'daki genişlet butonu) daha
@@ -21,9 +24,10 @@ detaylı bir pencere açar.
   CLI'nin `/usage` komutunun kullandığı veriyle aynı.
 - Context kullanımı: `~/.claude/projects/**/*.jsonl` transkript dosyaları,
   dosya değişikliklerinde `notify` ile canlı izleniyor.
-- Codex tarafı benzer mantıkla `~/.codex/auth.json` + reverse-engineer
-  edilmiş `/wham/usage` uç noktasını deniyor; bu kısım gerçek bir Codex
-  hesabıyla test edilip doğrulanmadı.
+- Codex: `~/.codex/auth.json`'daki `tokens.access_token` / `tokens.account_id`
+  ile `GET https://chatgpt.com/backend-api/wham/usage`. Şema, steipete/CodexBar
+  (aynı işi macOS'ta yapan açık kaynak menu-bar uygulaması) kodundan
+  doğrulandı; gerçek bir hesapla uçtan uca henüz test edilmedi.
 
 Bu uç noktalar resmi/dokümante değil - Anthropic/OpenAI önceden haber
 vermeden değiştirebilir. Bir sağlayıcı başarısız olursa HUD o kartı hatayla

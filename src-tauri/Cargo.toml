@@ -27,4 +27,5 @@ tokio = { version = "1", features = ["time", "rt", "macros", "sync"] }
 notify = "6"
 dirs = "5"
 anyhow = "1"
+time = { version = "0.3", features = ["formatting"] }
 

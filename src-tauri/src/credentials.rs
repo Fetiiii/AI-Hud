@@ -2,7 +2,7 @@
 //! already store locally after `claude login` / `codex login`. We never ask
 //! the user for a token; we just read the same file the CLI itself writes.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -47,37 +47,40 @@ pub struct CodexToken {
     pub account_id: Option<String>,
 }
 
-/// Reads `~/.codex/auth.json`, written by `codex login`.
-///
-/// NOTE: unlike the Claude credentials file, this schema is not confirmed
-/// against a real file yet (no Codex account was available while scaffolding
-/// this project). We parse defensively via `serde_json::Value` and try a
-/// handful of plausible key paths so this degrades to a clear error instead
-/// of a panic if the real shape differs. Verify against an actual
-/// `~/.codex/auth.json` and tighten this once confirmed.
+#[derive(Debug, Deserialize)]
+struct CodexAuthFile {
+    tokens: Option<CodexTokens>,
+    #[serde(rename = "OPENAI_API_KEY")]
+    openai_api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CodexTokens {
+    access_token: String,
+    account_id: Option<String>,
+}
+
+/// Reads `~/.codex/auth.json`, written by `codex login`. Schema confirmed
+/// against a real file: `{ auth_mode, OPENAI_API_KEY, tokens: { id_token,
+/// access_token, refresh_token, account_id }, last_refresh }`.
 pub fn read_codex_token() -> Result<CodexToken> {
     let path = home_dir()?.join(".codex").join("auth.json");
     let raw = std::fs::read_to_string(&path)
         .with_context(|| format!("no Codex credentials at {}", path.display()))?;
-    let value: serde_json::Value =
+    let parsed: CodexAuthFile =
         serde_json::from_str(&raw).context("could not parse Codex auth.json")?;
 
-    let access_token = value
-        .pointer("/tokens/access_token")
-        .or_else(|| value.pointer("/access_token"))
-        .or_else(|| value.pointer("/OPENAI_API_KEY"))
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("could not find an access token in ~/.codex/auth.json (schema unconfirmed)"))?
-        .to_string();
-
-    let account_id = value
-        .pointer("/tokens/account_id")
-        .or_else(|| value.pointer("/account_id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    Ok(CodexToken {
-        access_token,
-        account_id,
-    })
+    if let Some(tokens) = parsed.tokens {
+        return Ok(CodexToken {
+            access_token: tokens.access_token,
+            account_id: tokens.account_id,
+        });
+    }
+    if let Some(access_token) = parsed.openai_api_key {
+        return Ok(CodexToken {
+            access_token,
+            account_id: None,
+        });
+    }
+    bail!("~/.codex/auth.json has neither `tokens` nor `OPENAI_API_KEY` - run `codex` to log in")
 }
