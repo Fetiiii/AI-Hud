@@ -7,10 +7,8 @@ sistem tepsisinden açılan hafif bir HUD. Backend Rust (Tauri), arayüz Svelte.
 
 - Claude Code: 5 saatlik ve haftalık kullanım yüzdesi + sıfırlanma zamanı
 - Codex: aynı metrikler (5 saatlik + haftalık, `rate_limit.primary_window` / `secondary_window`)
-- Aktif oturumun context penceresi doluluk oranı - şu an sadece Claude Code için
-  (yerel transcript dosyalarından, ağ çağrısı yok); Codex'in yerel oturum
-  loglarının formatı henüz doğrulanmadığı için Codex context ölçümü boş döner,
-  bkz. `src-tauri/src/context.rs`
+- Aktif oturumun context penceresi doluluk oranı - hem Claude Code hem Codex
+  için, tamamen yerel transcript/rollout dosyalarından, ağ çağrısı yok
 
 Sistem tepsisindeki simgeye tıklamak küçük bir popover açar; popover içindeki
 herhangi bir metriğe çift tıklamak (veya popover'daki genişlet butonu) daha
@@ -22,12 +20,14 @@ detaylı bir pencere açar.
   dokümante edilmemiş ama ücretsiz (inference maliyeti olmayan)
   `GET https://api.anthropic.com/api/oauth/usage` uç noktası. Bu, `claude`
   CLI'nin `/usage` komutunun kullandığı veriyle aynı.
-- Context kullanımı: `~/.claude/projects/**/*.jsonl` transkript dosyaları,
-  dosya değişikliklerinde `notify` ile canlı izleniyor.
 - Codex: `~/.codex/auth.json`'daki `tokens.access_token` / `tokens.account_id`
   ile `GET https://chatgpt.com/backend-api/wham/usage`. Şema, steipete/CodexBar
   (aynı işi macOS'ta yapan açık kaynak menu-bar uygulaması) kodundan
   doğrulandı; gerçek bir hesapla uçtan uca henüz test edilmedi.
+- Context kullanımı: Claude Code için `~/.claude/projects/**/*.jsonl`, Codex
+  için `~/.codex/sessions/**/rollout-*.jsonl` (`token_count` olaylarındaki
+  `last_token_usage` + `model_context_window`). Her ikisi de `notify` ile
+  dosya değişikliklerinde canlı izleniyor.
 
 Bu uç noktalar resmi/dokümante değil - Anthropic/OpenAI önceden haber
 vermeden değiştirebilir. Bir sağlayıcı başarısız olursa HUD o kartı hatayla
