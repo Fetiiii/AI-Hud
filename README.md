@@ -31,9 +31,14 @@ birlikte gösterir, çökmez.
 
 ## Geliştirme
 
-Linux'ta Tauri'nin sistem bağımlılıkları gerekiyor (Debian/Ubuntu adları,
-CachyOS/Arch'ta karşılıkları `webkit2gtk-4.1`, `gtk3`,
-`libayatana-appindicator3` paketleri):
+CachyOS/Arch'ta önce Tauri'nin sistem bağımlılıklarını kur:
+
+```bash
+sudo pacman -S --needed webkit2gtk-4.1 base-devel curl wget file openssl \
+  appmenu-gtk-module libappindicator-gtk3 librsvg xdotool
+```
+
+Sonra:
 
 ```bash
 pnpm install
