@@ -9,7 +9,7 @@ mod state;
 use state::AppState;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -20,9 +20,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
             commands::refresh_now,
-            commands::open_detail,
-            commands::hide_popover,
-            commands::debug_log,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -39,58 +36,23 @@ pub fn run() {
                     match event.id().as_ref() {
                         "quit" => app.exit(0),
                         "show" => {
-                            // Linux tray backends (appindicator/StatusNotifierItem)
-                            // never emit TrayIconEvent::Click, so the menu is the
-                            // only reachable entry point here - no tray-icon rect
-                            // to anchor against either, so just center it.
+                            // Linux tray backends (appindicator /
+                            // StatusNotifierItem) never emit
+                            // TrayIconEvent::Click, so this menu is the only
+                            // way in - there is no left-click handler to write.
                             if let Some(win) = app.get_webview_window("popover") {
                                 let visible = win.is_visible().unwrap_or(false);
                                 if visible {
                                     let _ = win.hide();
                                 } else {
-                                    let _ = win.center();
+                                    // No re-centring: the HUD reappears where
+                                    // the user last put it.
                                     let _ = win.show();
                                     let _ = win.set_focus();
                                 }
                             }
                         }
                         _ => {}
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        rect,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("popover") {
-                            let visible = win.is_visible().unwrap_or(false);
-                            if visible {
-                                let _ = win.hide();
-                            } else {
-                                // Anchor the popover just under the tray icon,
-                                // the way a macOS menu-bar app would.
-                                let (icon_x, icon_y) = match rect.position {
-                                    tauri::Position::Physical(p) => (p.x, p.y),
-                                    tauri::Position::Logical(p) => (p.x as i32, p.y as i32),
-                                };
-                                let icon_height = match rect.size {
-                                    tauri::Size::Physical(s) => s.height as i32,
-                                    tauri::Size::Logical(s) => s.height as i32,
-                                };
-                                let _ = win.set_position(tauri::Position::Physical(
-                                    tauri::PhysicalPosition {
-                                        x: icon_x,
-                                        y: icon_y + icon_height,
-                                    },
-                                ));
-                                let _ = win.show();
-                                let _ = win.set_focus();
-                            }
-                        }
                     }
                 })
                 .build(app)?;

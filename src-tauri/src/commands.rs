@@ -94,25 +94,3 @@ pub async fn refresh_now(app: AppHandle) -> Snapshot {
     refresh_all(&app).await;
     app.state::<AppState>().snapshot.lock().unwrap().clone()
 }
-
-#[tauri::command]
-pub fn open_detail(app: AppHandle) {
-    if let Some(win) = app.get_webview_window("detail") {
-        let _ = win.show();
-        let _ = win.set_focus();
-    }
-}
-
-/// Temporary diagnostic channel: the webview's own console is not visible
-/// from the terminal, so the frontend routes findings through here.
-#[tauri::command]
-pub fn debug_log(msg: String) {
-    eprintln!("[hud-debug] {msg}");
-}
-
-#[tauri::command]
-pub fn hide_popover(app: AppHandle) {
-    if let Some(win) = app.get_webview_window("popover") {
-        let _ = win.hide();
-    }
-}
