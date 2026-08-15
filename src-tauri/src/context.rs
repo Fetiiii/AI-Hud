@@ -48,6 +48,52 @@ fn claude_context_window(model: &str) -> u64 {
 /// `model_context_window` almost every time, so this rarely matters.
 const DEFAULT_CODEX_CONTEXT_WINDOW: u64 = 128_000;
 
+/// How much of a transcript's tail to read when only the newest entry is
+/// wanted. These files reach tens of megabytes, and the file watcher fires on
+/// every write while a session is running - slurping the whole thing to reach
+/// its last line was the single biggest source of this app's memory use.
+const TAIL_BYTES: u64 = 512 * 1024;
+
+/// Reads the last `limit` bytes of a file as text, discarding the leading
+/// partial line so every line handed back is complete. Returns `None` for an
+/// empty file.
+pub fn read_tail(path: &Path, limit: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    if len == 0 {
+        return None;
+    }
+
+    let from = len.saturating_sub(limit);
+    file.seek(SeekFrom::Start(from)).ok()?;
+    let mut buf = Vec::with_capacity((len - from) as usize);
+    file.read_to_end(&mut buf).ok()?;
+
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    if from == 0 {
+        return Some(text);
+    }
+    // The window almost certainly starts mid-line; drop that fragment.
+    Some(match text.find('\n') {
+        Some(i) => text[i + 1..].to_string(),
+        None => return None,
+    })
+}
+
+/// Runs `scan` over the file's tail, and only re-reads the whole file if that
+/// window held no answer - so the common case never allocates the full file.
+fn scan_from_end<T>(path: &Path, scan: impl Fn(&str) -> Option<T>) -> Option<T> {
+    if let Some(found) = read_tail(path, TAIL_BYTES).as_deref().and_then(&scan) {
+        return Some(found);
+    }
+    if std::fs::metadata(path).ok()?.len() <= TAIL_BYTES {
+        return None;
+    }
+    scan(&std::fs::read_to_string(path).ok()?)
+}
+
 pub fn find_latest_file(root: &Path, ext: &str) -> Option<PathBuf> {
     fn walk(dir: &Path, ext: &str, best: &mut Option<(SystemTime, PathBuf)>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -83,7 +129,10 @@ pub fn find_latest_file(root: &Path, ext: &str) -> Option<PathBuf> {
 /// from the *last* usage block, which is the closest local proxy for "how
 /// much of the context window the next turn will send".
 fn last_claude_usage(path: &Path) -> Result<Option<(u64, u64)>> {
-    let raw = std::fs::read_to_string(path)?;
+    Ok(scan_from_end(path, scan_claude_usage))
+}
+
+fn scan_claude_usage(raw: &str) -> Option<(u64, u64)> {
     for line in raw.lines().rev() {
         let line = line.trim();
         if line.is_empty() {
@@ -112,9 +161,9 @@ fn last_claude_usage(path: &Path) -> Result<Option<(u64, u64)>> {
             .and_then(|v| v.as_str())
             .map(claude_context_window)
             .unwrap_or(DEFAULT_CLAUDE_CONTEXT_WINDOW);
-        return Ok(Some((input + cache_creation + cache_read, window)));
+        return Some((input + cache_creation + cache_read, window));
     }
-    Ok(None)
+    None
 }
 
 pub fn claude_context_usage() -> Result<Option<ContextUsage>> {
@@ -152,7 +201,10 @@ pub fn claude_context_usage() -> Result<Option<ContextUsage>> {
 /// was actually sent to the model on the most recent turn, i.e. how full the
 /// context window is right now.
 fn last_codex_usage(path: &Path) -> Result<Option<(u64, u64)>> {
-    let raw = std::fs::read_to_string(path)?;
+    Ok(scan_from_end(path, scan_codex_usage))
+}
+
+fn scan_codex_usage(raw: &str) -> Option<(u64, u64)> {
     for line in raw.lines().rev() {
         let line = line.trim();
         if line.is_empty() {
@@ -182,9 +234,9 @@ fn last_codex_usage(path: &Path) -> Result<Option<(u64, u64)>> {
             .and_then(|v| v.as_u64())
             .unwrap_or(DEFAULT_CODEX_CONTEXT_WINDOW);
 
-        return Ok(Some((tokens, window)));
+        return Some((tokens, window));
     }
-    Ok(None)
+    None
 }
 
 /// The rollout's first line is always `session_meta`, carrying `payload.cwd`

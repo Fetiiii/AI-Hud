@@ -21,6 +21,7 @@
 use crate::pricing::PriceTable;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -102,11 +103,15 @@ fn summarise(by_model: HashMap<String, TokenTotals>, prices: &PriceTable) -> Ses
 
 /// Walks a Claude Code transcript and totals its usage, per model.
 pub fn claude_session_cost(path: &Path, prices: &PriceTable) -> Option<SessionCost> {
-    let raw = std::fs::read_to_string(path).ok()?;
+    // Every entry has to be visited, but they do not all have to be resident:
+    // these transcripts reach tens of megabytes, and holding one in a String
+    // was a large part of this app's memory footprint.
+    let file = BufReader::new(std::fs::File::open(path).ok()?);
     let mut seen: HashSet<(String, String)> = HashSet::new();
     let mut by_model: HashMap<String, TokenTotals> = HashMap::new();
 
-    for line in raw.lines() {
+    for line in file.lines().map_while(Result::ok) {
+        let line = line.as_str();
         if !line.contains("\"usage\"") {
             continue;
         }
@@ -178,11 +183,12 @@ pub fn claude_session_cost(path: &Path, prices: &PriceTable) -> Option<SessionCo
 /// last one wins rather than being summed - adding them would count every
 /// turn's cumulative figure again.
 pub fn codex_session_cost(path: &Path, prices: &PriceTable) -> Option<SessionCost> {
-    let raw = std::fs::read_to_string(path).ok()?;
+    let file = BufReader::new(std::fs::File::open(path).ok()?);
     let mut model = "bilinmeyen".to_string();
     let mut latest: Option<TokenTotals> = None;
 
-    for line in raw.lines() {
+    for line in file.lines().map_while(Result::ok) {
+        let line = line.as_str();
         if line.contains("\"model\"") {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                 if let Some(m) = v.pointer("/payload/model").and_then(|v| v.as_str()) {

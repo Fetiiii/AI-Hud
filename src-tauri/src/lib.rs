@@ -77,13 +77,18 @@ pub fn run() {
                     for root in context::watch_roots() {
                         let _ = watcher.watch(&root, RecursiveMode::Recursive);
                     }
-                    for event in rx {
-                        if event.is_ok() {
-                            let handle = handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                commands::refresh_context_only(&handle).await;
-                            });
-                        }
+                    // Claude Code rewrites its transcript continuously, so
+                    // reacting to every single event meant re-reading the
+                    // file dozens of times a second. Coalesce a burst into
+                    // one refresh; the context readout is not worth more
+                    // resolution than this.
+                    const QUIET_PERIOD: Duration = Duration::from_millis(400);
+                    while rx.recv().is_ok() {
+                        while rx.recv_timeout(QUIET_PERIOD).is_ok() {}
+                        let handle = handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            commands::refresh_context_only(&handle).await;
+                        });
                     }
                 });
             }

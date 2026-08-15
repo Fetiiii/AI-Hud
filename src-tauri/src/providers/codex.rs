@@ -187,7 +187,9 @@ fn recent_rollouts(root: &Path, limit: usize) -> Vec<PathBuf> {
 /// Returns `None` for files that have none yet (a session that hasn't
 /// completed a turn writes `token_count` events with `rate_limits: null`).
 fn rate_limits_in(path: &Path) -> Option<(String, LocalRateLimits)> {
-    let raw = std::fs::read_to_string(path).ok()?;
+    // Only the newest block matters, and these logs get large - read the tail
+    // rather than the whole file, for each of up to ROLLOUT_SCAN_LIMIT files.
+    let raw = crate::context::read_tail(path, 256 * 1024)?;
     for line in raw.lines().rev() {
         let line = line.trim();
         if line.is_empty() || !line.contains("\"rate_limits\"") {
