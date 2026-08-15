@@ -1,46 +1,35 @@
 <script lang="ts">
+  import { toneFor, toneColor } from "./tone";
+
   let {
     label,
     pct,
     subtitle = "",
-    compact = false,
-    ondblclick,
+    providerVar = "--accent",
   }: {
     label: string;
     pct: number | null;
     subtitle?: string;
-    compact?: boolean;
-    ondblclick?: () => void;
+    providerVar?: string;
   } = $props();
 
   const clamped = $derived(pct === null ? 0 : Math.max(0, Math.min(100, pct)));
-  const tone = $derived(
-    pct === null ? "unknown" : clamped >= 90 ? "danger" : clamped >= 70 ? "warn" : "ok",
-  );
+  const tone = $derived(toneFor(pct));
+  const color = $derived(toneColor(tone, providerVar));
 </script>
 
-<div
-  class="meter"
-  class:compact
-  class:clickable={!!ondblclick}
-  role="button"
-  tabindex="0"
-  ondblclick={ondblclick ?? (() => {})}
->
+<div class="meter">
   <div class="head">
     <span class="label">{label}</span>
-    <span class="value" class:tone-danger={tone === "danger"} class:tone-warn={tone === "warn"}>
+    <span class="value" style={tone === "normal" || tone === "unknown" ? "" : `color:${color}`}>
       {pct === null ? "—" : `%${Math.round(pct)}`}
     </span>
   </div>
   <div class="track">
     <div
       class="fill"
-      class:tone-ok={tone === "ok"}
-      class:tone-warn={tone === "warn"}
-      class:tone-danger={tone === "danger"}
-      class:tone-unknown={tone === "unknown"}
-      style={`width: ${tone === "unknown" ? 100 : clamped}%`}
+      class:idle={pct === null}
+      style={`width:${pct === null ? 100 : clamped}%;background:${color}`}
     ></div>
   </div>
   {#if subtitle}
@@ -52,13 +41,7 @@
   .meter {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 2px 0;
-    border-radius: var(--radius-sm);
-  }
-
-  .meter.clickable {
-    cursor: pointer;
+    gap: 5px;
   }
 
   .head {
@@ -69,66 +52,43 @@
 
   .label {
     font-size: 12px;
-    font-weight: 590;
+    font-weight: 560;
     color: var(--text);
   }
 
   .value {
     font-size: 12px;
     font-variant-numeric: tabular-nums;
-    color: var(--text-muted);
-    font-weight: 590;
-  }
-
-  .value.tone-warn {
-    color: var(--warn);
-  }
-
-  .value.tone-danger {
-    color: var(--danger);
+    font-weight: 620;
+    color: var(--text);
   }
 
   .track {
-    height: 6px;
+    height: 4px;
     border-radius: 999px;
     background: var(--track);
     overflow: hidden;
   }
 
-  .compact .track {
-    height: 5px;
-  }
-
   .fill {
     height: 100%;
     border-radius: 999px;
-    transition: width 0.4s ease;
+    transition: width 0.5s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
-  .fill.tone-ok {
-    background: var(--ok);
+  .fill.idle {
+    opacity: 0.25;
   }
 
-  .fill.tone-warn {
-    background: var(--warn);
-  }
-
-  .fill.tone-danger {
-    background: var(--danger);
-  }
-
-  .fill.tone-unknown {
-    background: repeating-linear-gradient(
-      45deg,
-      var(--track),
-      var(--track) 6px,
-      transparent 6px,
-      transparent 12px
-    );
+  @media (prefers-reduced-motion: reduce) {
+    .fill {
+      transition: none;
+    }
   }
 
   .subtitle {
     font-size: 10.5px;
     color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
   }
 </style>

@@ -1,14 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the popover and detail windows",
-  "windows": ["popover", "detail"],
+  "description": "HUD window: show/hide, drag by the header, and resize to measured content.",
+  "windows": ["popover"],
   "permissions": [
     "core:default",
     "opener:default",
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-set-focus",
-    "core:window:allow-is-visible"
+    "core:window:allow-is-visible",
+    "core:window:allow-set-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-min-size",
+    "core:window:allow-set-max-size"
   ]
 }

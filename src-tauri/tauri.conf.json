@@ -16,28 +16,18 @@
         "url": "/popover",
         "title": "AI HUD",
         "width": 320,
-        "height": 220,
-        "resizable": false,
+        "height": 300,
+        "resizable": true,
+        "maximizable": false,
+        "minimizable": false,
+        "preventOverflow": true,
         "decorations": false,
         "transparent": true,
         "shadow": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "visible": false,
-        "center": false
-      },
-      {
-        "label": "detail",
-        "url": "/detail",
-        "title": "AI HUD",
-        "width": 460,
-        "height": 560,
-        "minWidth": 380,
-        "minHeight": 420,
-        "decorations": true,
-        "transparent": false,
-        "skipTaskbar": false,
-        "visible": false
+        "visible": true,
+        "center": true
       }
     ],
     "security": {

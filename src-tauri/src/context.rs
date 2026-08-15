@@ -19,15 +19,36 @@ pub struct ContextUsage {
     pub project: Option<String>,
 }
 
-/// Standard Claude context window. A handful of models/betas support 1M,
-/// but 200k is the safe default until we read the model name and special-case it.
+/// Fallback when the transcript names no model we recognise. 200k is the
+/// smaller of the two window sizes in use, so an unknown model errs towards
+/// reporting a *fuller* context rather than a falsely comfortable one.
 const DEFAULT_CLAUDE_CONTEXT_WINDOW: u64 = 200_000;
+
+/// Context window for a Claude model, by name as it appears in the transcript.
+///
+/// This matters more than it looks: assuming 200k for everything reported
+/// "%269 - 537.7K / 200.0K" for a Sonnet 5 session, because that model
+/// actually has a 1M window. The current Opus/Sonnet/Fable line is all 1M;
+/// Haiku is the 200k exception.
+fn claude_context_window(model: &str) -> u64 {
+    if model.contains("haiku") {
+        return 200_000;
+    }
+    if model.contains("opus")
+        || model.contains("sonnet")
+        || model.contains("fable")
+        || model.contains("mythos")
+    {
+        return 1_000_000;
+    }
+    DEFAULT_CLAUDE_CONTEXT_WINDOW
+}
 
 /// Fallback only - Codex's `token_count` events carry the real
 /// `model_context_window` almost every time, so this rarely matters.
 const DEFAULT_CODEX_CONTEXT_WINDOW: u64 = 128_000;
 
-fn find_latest_file(root: &Path, ext: &str) -> Option<PathBuf> {
+pub fn find_latest_file(root: &Path, ext: &str) -> Option<PathBuf> {
     fn walk(dir: &Path, ext: &str, best: &mut Option<(SystemTime, PathBuf)>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -61,7 +82,7 @@ fn find_latest_file(root: &Path, ext: &str) -> Option<PathBuf> {
 /// `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`
 /// from the *last* usage block, which is the closest local proxy for "how
 /// much of the context window the next turn will send".
-fn last_claude_usage(path: &Path) -> Result<Option<u64>> {
+fn last_claude_usage(path: &Path) -> Result<Option<(u64, u64)>> {
     let raw = std::fs::read_to_string(path)?;
     for line in raw.lines().rev() {
         let line = line.trim();
@@ -83,7 +104,15 @@ fn last_claude_usage(path: &Path) -> Result<Option<u64>> {
             .get("cache_read_input_tokens")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        return Ok(Some(input + cache_creation + cache_read));
+        // The model is recorded on the same entry as the usage it produced,
+        // so a session that switched models mid-way is sized by whichever
+        // model actually ran the last turn.
+        let window = value
+            .pointer("/message/model")
+            .and_then(|v| v.as_str())
+            .map(claude_context_window)
+            .unwrap_or(DEFAULT_CLAUDE_CONTEXT_WINDOW);
+        return Ok(Some((input + cache_creation + cache_read, window)));
     }
     Ok(None)
 }
@@ -94,7 +123,7 @@ pub fn claude_context_usage() -> Result<Option<ContextUsage>> {
     let Some(path) = find_latest_file(&projects_dir, "jsonl") else {
         return Ok(None);
     };
-    let Some(tokens) = last_claude_usage(&path)? else {
+    let Some((tokens, context_window)) = last_claude_usage(&path)? else {
         return Ok(None);
     };
     let project = path
@@ -106,7 +135,7 @@ pub fn claude_context_usage() -> Result<Option<ContextUsage>> {
     Ok(Some(ContextUsage {
         provider: "claude",
         tokens,
-        context_window: DEFAULT_CLAUDE_CONTEXT_WINDOW,
+        context_window,
         project,
     }))
 }
@@ -237,6 +266,34 @@ mod tests {
 
         let cwd = codex_session_cwd(&path);
         assert_eq!(cwd.as_deref(), Some("some-project"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sizes_the_window_from_the_model_that_ran_the_turn() {
+        // Regression: this reported "%269 - 537.7K / 200.0K" on screen,
+        // because every model was assumed to have a 200k window.
+        assert_eq!(claude_context_window("claude-sonnet-5"), 1_000_000);
+        assert_eq!(claude_context_window("claude-opus-5"), 1_000_000);
+        assert_eq!(claude_context_window("claude-haiku-4-5-20251001"), 200_000);
+        assert_eq!(claude_context_window("something-unknown"), 200_000);
+    }
+
+    #[test]
+    fn reads_tokens_and_window_from_a_transcript() {
+        let dir = std::env::temp_dir().join(format!("ai-hud-claude-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transcript.jsonl");
+        std::fs::write(
+            &path,
+            r#"{"type":"assistant","message":{"model":"claude-sonnet-5","usage":{"input_tokens":1200,"cache_creation_input_tokens":300,"cache_read_input_tokens":536200}}}"#,
+        )
+        .unwrap();
+
+        let (tokens, window) = last_claude_usage(&path).unwrap().expect("usage found");
+        assert_eq!(tokens, 537_700);
+        assert_eq!(window, 1_000_000, "Sonnet 5 has a 1M window, not 200k");
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

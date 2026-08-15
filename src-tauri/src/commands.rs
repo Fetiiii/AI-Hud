@@ -1,4 +1,6 @@
 use crate::context::{claude_context_usage, codex_context_usage};
+use crate::cost::session_costs;
+use crate::pricing;
 use crate::providers::{claude, codex};
 use crate::state::{now_ms, AppState, Snapshot};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -12,18 +14,23 @@ pub async fn refresh_all(app: &AppHandle) {
     let client = reqwest::Client::new();
     let mut errors = Vec::new();
 
+    // Last known good, so a transient failure (a rate limit, a dropped
+    // connection) leaves the card showing slightly stale numbers with a note
+    // rather than blanking it out - which reads as "you are not logged in".
+    let previous = app.state::<AppState>().snapshot.lock().unwrap().clone();
+
     let claude_usage = match claude::fetch(&client).await {
         Ok(u) => Some(u),
         Err(e) => {
             errors.push(format!("Claude: {e:#}"));
-            None
+            previous.claude_usage
         }
     };
     let codex_usage = match codex::fetch(&client).await {
         Ok(u) => Some(u),
         Err(e) => {
             errors.push(format!("Codex: {e:#}"));
-            None
+            previous.codex_usage
         }
     };
     let claude_context = claude_context_usage().unwrap_or_else(|e| {
@@ -35,11 +42,21 @@ pub async fn refresh_all(app: &AppHandle) {
         None
     });
 
+    // Prices drive the cost readout; a failure here only costs the money
+    // figure, so it is a note rather than an error.
+    let (prices, price_note) = pricing::load(&client, now_ms()).await;
+    if let Some(note) = price_note {
+        errors.push(format!("Fiyatlar: {note}"));
+    }
+    let (claude_cost, codex_cost) = session_costs(&prices);
+
     let snapshot = Snapshot {
         claude_usage,
         codex_usage,
         claude_context,
         codex_context,
+        claude_cost,
+        codex_cost,
         errors,
         updated_at_ms: now_ms(),
     };
@@ -84,6 +101,13 @@ pub fn open_detail(app: AppHandle) {
         let _ = win.show();
         let _ = win.set_focus();
     }
+}
+
+/// Temporary diagnostic channel: the webview's own console is not visible
+/// from the terminal, so the frontend routes findings through here.
+#[tauri::command]
+pub fn debug_log(msg: String) {
+    eprintln!("[hud-debug] {msg}");
 }
 
 #[tauri::command]

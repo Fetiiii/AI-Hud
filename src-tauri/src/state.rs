@@ -1,4 +1,5 @@
 use crate::context::ContextUsage;
+use crate::cost::SessionCost;
 use crate::providers::ProviderUsage;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -11,6 +12,11 @@ pub struct Snapshot {
     pub codex_usage: Option<ProviderUsage>,
     pub claude_context: Option<ContextUsage>,
     pub codex_context: Option<ContextUsage>,
+    /// What the active session would have cost at API list prices. These are
+    /// subscription products, so this answers "what would this have cost
+    /// through the API", not "what you were billed".
+    pub claude_cost: Option<SessionCost>,
+    pub codex_cost: Option<SessionCost>,
     /// Human-readable errors from the last refresh attempt (missing login,
     /// endpoint schema drift, etc.) surfaced as-is in the detail view rather
     /// than swallowed.

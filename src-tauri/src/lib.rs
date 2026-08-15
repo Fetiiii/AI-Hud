@@ -1,6 +1,8 @@
 mod commands;
 mod context;
+mod cost;
 mod credentials;
+mod pricing;
 mod providers;
 mod state;
 
@@ -20,20 +22,39 @@ pub fn run() {
             commands::refresh_now,
             commands::open_detail,
             commands::hide_popover,
+            commands::debug_log,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
 
+            let show_item = MenuItem::with_id(app, "show", "Göster", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&quit_item])?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
-                    if event.id().as_ref() == "quit" {
-                        app.exit(0);
+                    match event.id().as_ref() {
+                        "quit" => app.exit(0),
+                        "show" => {
+                            // Linux tray backends (appindicator/StatusNotifierItem)
+                            // never emit TrayIconEvent::Click, so the menu is the
+                            // only reachable entry point here - no tray-icon rect
+                            // to anchor against either, so just center it.
+                            if let Some(win) = app.get_webview_window("popover") {
+                                let visible = win.is_visible().unwrap_or(false);
+                                if visible {
+                                    let _ = win.hide();
+                                } else {
+                                    let _ = win.center();
+                                    let _ = win.show();
+                                    let _ = win.set_focus();
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -74,28 +95,10 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Click-away dismiss, like a macOS menu-bar popover.
-            if let Some(popover) = app.get_webview_window("popover") {
-                let popover_handle = popover.clone();
-                popover.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Focused(false) = event {
-                        let _ = popover_handle.hide();
-                    }
-                });
-            }
-
-            // The detail window is expensive to recreate, so closing it (the
-            // OS window-close button) just hides it - the app keeps living in
-            // the tray, same as the popover.
-            if let Some(detail) = app.get_webview_window("detail") {
-                let detail_handle = detail.clone();
-                detail.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = detail_handle.hide();
-                    }
-                });
-            }
+            // Click-away dismiss, like a macOS menu-bar popover - handled in
+            // the frontend (popover/+page.svelte) instead of here, since it
+            // needs to know the collapsed/expanded UI state: the collapsed
+            // "mini" pill should stay on screen even when it loses focus.
 
             // Filesystem watcher: near-instant context-usage updates whenever
             // Claude Code / Codex write to their local transcripts.
@@ -123,13 +126,16 @@ pub fn run() {
                 });
             }
 
-            // Periodic network poll for the 5h/weekly windows. Kept
-            // infrequent since it's a live API call, even though it's free.
+            // Periodic network poll for the limit windows. The windows being
+            // tracked are hours and days long, so polling every 90s bought
+            // nothing and was enough - across restarts - to earn a 429 from
+            // Anthropic's endpoint. Five minutes is still far finer-grained
+            // than anything it reports.
             {
                 let handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     commands::refresh_all(&handle).await;
-                    let mut ticker = tokio::time::interval(Duration::from_secs(90));
+                    let mut ticker = tokio::time::interval(Duration::from_secs(300));
                     loop {
                         ticker.tick().await;
                         commands::refresh_all(&handle).await;
@@ -139,6 +145,20 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // A tray app outlives its windows. Hiding the HUD (on click-away,
+            // or on the blur that follows startup) leaves zero visible
+            // windows, which Tauri otherwise treats as "the app is done" and
+            // exits with code 0 - no panic, no message, the tray icon just
+            // vanishes. `code` is `None` for exactly that window-driven exit
+            // and `Some` for a programmatic one, so the tray's "Çıkış" still
+            // quits normally.
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

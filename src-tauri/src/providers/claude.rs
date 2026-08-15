@@ -28,6 +28,12 @@ impl From<RawWindow> for UsageWindow {
         UsageWindow {
             utilization_pct: w.utilization,
             resets_at: w.resets_at,
+            // Anthropic's endpoint names its windows structurally
+            // (`five_hour`, `seven_day`, ...) rather than reporting a
+            // duration, so there is nothing to derive a label from - the
+            // frontend uses the slot's conventional name.
+            label: None,
+            window_minutes: None,
         }
     }
 }
@@ -56,9 +62,24 @@ pub async fn fetch(client: &reqwest::Client) -> Result<ProviderUsage> {
         .header("user-agent", "claude-cli/2.0.0 (external, cli)")
         .send()
         .await
-        .context("request to Claude usage endpoint failed")?
-        .error_for_status()
-        .context("Claude usage endpoint returned an error status (token expired? run `claude` to re-login)")?;
+        .context("request to Claude usage endpoint failed")?;
+
+    // 429 is not an auth problem, and reporting it as "token expired? run
+    // `claude` to re-login" sends the user off to fix something that isn't
+    // broken. Name it for what it is, and pass on the server's own hint.
+    if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let retry = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| format!(" ({v} sn sonra tekrar denenebilir)"))
+            .unwrap_or_default();
+        bail!("kullanım uç noktası şu an istek sınırında{retry} - eldeki son değer gösteriliyor");
+    }
+
+    let resp = resp.error_for_status().context(
+        "Claude usage endpoint returned an error status (token expired? run `claude` to re-login)",
+    )?;
 
     let raw: RawUsageResponse = resp
         .json()
@@ -70,5 +91,6 @@ pub async fn fetch(client: &reqwest::Client) -> Result<ProviderUsage> {
         seven_day: raw.seven_day.map(Into::into),
         seven_day_opus: raw.seven_day_opus.map(Into::into),
         seven_day_sonnet: raw.seven_day_sonnet.map(Into::into),
+        plan_type: None,
     })
 }

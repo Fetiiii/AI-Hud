@@ -20,6 +20,25 @@ export function timeUntil(iso: string | null | undefined): string {
   return remHours > 0 ? `${days} gün ${remHours} sa sonra` : `${days} gün sonra`;
 }
 
+/** A window's display name: what the provider reported, else the slot's
+ *  conventional name. Never assume the slot — a free Codex plan's primary
+ *  window is monthly, not 5-hourly. */
+export function windowLabel(
+  window: { label: string | null } | null | undefined,
+  fallback: string,
+): string {
+  return window?.label ?? fallback;
+}
+
+/** Small amounts keep their cents visible — "$0.00" for a real four-cent
+ *  session reads as broken, so sub-dollar figures get more precision. */
+export function formatUsd(n: number): string {
+  if (n === 0) return "$0";
+  if (n < 0.01) return "<$0.01";
+  if (n < 10) return `$${n.toFixed(2)}`;
+  return `$${n.toFixed(1)}`;
+}
+
 export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1000).toFixed(1)}K`;

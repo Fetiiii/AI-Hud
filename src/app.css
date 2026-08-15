@@ -1,18 +1,26 @@
 :root {
   color-scheme: light dark;
 
-  --bg: rgba(246, 246, 248, 0.82);
+  /* Near-opaque on purpose: there is no working backdrop blur behind this
+     panel (see popover/+page.svelte), so a low alpha would just make the
+     wallpaper show through as noise under the text. */
+  --bg: #f7f7f9;
   --surface: rgba(255, 255, 255, 0.6);
   --surface-solid: #f6f6f8;
   --border: rgba(0, 0, 0, 0.08);
   --text: #1c1c1e;
   --text-muted: #6e6e73;
   --accent: #0a84ff;
-  --ok: #30b350;
-  --warn: #d9a418;
-  --danger: #e5484d;
+  /* Semantic state only — a meter below the warn threshold carries its
+     provider's own tint instead, so an idle HUD reads as calm rather than
+     as a monitoring dashboard. */
+  --warn: #b5822a;
+  --danger: #c9524b;
   --track: rgba(0, 0, 0, 0.08);
   --shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+
+  --claude-tint: #d97757;
+  --codex-tint: #10a37f;
 
   --radius-lg: 16px;
   --radius-md: 10px;
@@ -25,18 +33,17 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: rgba(30, 30, 34, 0.78);
+    --bg: #1c1d21;
     --surface: rgba(255, 255, 255, 0.06);
     --surface-solid: #1e1e22;
     --border: rgba(255, 255, 255, 0.09);
     --text: #f2f2f4;
     --text-muted: #9a9aa1;
     --accent: #409cff;
-    --ok: #32d158;
-    --warn: #ffd54a;
-    --danger: #ff6b6f;
-    --track: rgba(255, 255, 255, 0.1);
-    --shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    --warn: #d8a44a;
+    --danger: #e0685f;
+    --track: rgba(255, 255, 255, 0.11);
+    --shadow: 0 14px 38px rgba(0, 0, 0, 0.5);
   }
 }
 
