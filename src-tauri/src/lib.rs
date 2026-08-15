@@ -12,6 +12,20 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 
+/// Show the HUD if it is hidden, hide it if it is showing. Deliberately does
+/// not re-centre: the window reappears where the user last put it.
+fn toggle_hud(app: &tauri::AppHandle) {
+    let Some(win) = app.get_webview_window("popover") else {
+        return;
+    };
+    if win.is_visible().unwrap_or(false) {
+        let _ = win.hide();
+    } else {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -28,34 +42,37 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
-            TrayIconBuilder::new()
+            let tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| {
                     match event.id().as_ref() {
                         "quit" => app.exit(0),
-                        "show" => {
-                            // Linux tray backends (appindicator /
-                            // StatusNotifierItem) never emit
-                            // TrayIconEvent::Click, so this menu is the only
-                            // way in - there is no left-click handler to write.
-                            if let Some(win) = app.get_webview_window("popover") {
-                                let visible = win.is_visible().unwrap_or(false);
-                                if visible {
-                                    let _ = win.hide();
-                                } else {
-                                    // No re-centring: the HUD reappears where
-                                    // the user last put it.
-                                    let _ = win.show();
-                                    let _ = win.set_focus();
-                                }
-                            }
-                        }
+                        "show" => toggle_hud(app),
                         _ => {}
                     }
-                })
-                .build(app)?;
+                });
+
+            // Left-clicking the tray icon is the obvious gesture, but Linux
+            // tray backends (appindicator / StatusNotifierItem) never emit
+            // TrayIconEvent::Click - there, the menu above is the only way in.
+            // Wiring it anyway on Linux would be dead code; leaving it out
+            // everywhere would needlessly cost the gesture on Windows/macOS.
+            #[cfg(not(target_os = "linux"))]
+            let tray = tray.on_tray_icon_event(|tray, event| {
+                use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    toggle_hud(tray.app_handle());
+                }
+            });
+
+            tray.build(app)?;
 
             // Click-away dismiss, like a macOS menu-bar popover - handled in
             // the frontend (popover/+page.svelte) instead of here, since it
